@@ -1,21 +1,17 @@
-name: Deploy MomentumFlow to GitHub Pages
+name: Validate MomentumFlow static site
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -23,23 +19,21 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm install
-      - name: Build app
-        run: npm run build
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          node-version: 24
+      - name: Validate embedded JavaScript syntax
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          if (!/<title>MomentumFlow/.test(html)) throw new Error('Page title missing');
+          if (!/<div class="app">/.test(html)) throw new Error('Application shell missing');
+          const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+          if (!scripts.length) throw new Error('No inline application script found');
+          for (const [, source] of scripts) new Function(source);
+          console.log(`Validated ${scripts.length} inline script(s) in index.html`);
+          NODE
+      - name: Verify static Pages entrypoint
+        run: |
+          test -s index.html
+          test -f .nojekyll
+          echo "Static GitHub Pages entrypoint and .nojekyll are present."
